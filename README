@@ -1,0 +1,16 @@
+Introduction
+------------
+This repo contains the Arduino sketch that runs the instrument pack for Mark and Katherine's Stratoballoon project.  For detailed construction information, please visit http://markegilbert.wordpress.com/category/science/, and look for the numerous podcasts and blog posts starting October 22, 2012.
+
+
+Compilation
+-----------
+1) Download the code
+
+2) Place the libraries/OneWire folder in your arduino library.
+	On your Mac:: In (home directory)/Documents/Arduino/libraries
+	On your PC:: My Documents -> Arduino -> libraries
+	On your Linux box: (home directory)/sketchbook/libraries
+
+3) Open the Balloon/Balloon.ino sketch and compile it.
+
