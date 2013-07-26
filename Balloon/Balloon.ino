@@ -41,23 +41,45 @@ OneWire ds(TEMP_SENSOR_PIN);  // on digital pin 2
 SoftwareSerial DataLogger(11, 12); // RX, TX
 
 
+// *********************************************************************
+// GPS receiver settings
+SoftwareSerial gpsSerial(10, 9); // RX, TX (TX not used)
+const int sentenceSize = 80;
+char sentence[sentenceSize];
+
+
 void setup(void) {
   Serial.begin(9600);
   
   Wire.begin();
   CalibratePressureSensor();
-  ConfigureDataLogger();
+
+  DataLogger.begin(9600);
+//  gpsSerial.begin(9600);
 }
 
 
 void loop(void) {
   float CurrentTemp = GetTemp();
-  
   float CurrentPressure = GetPressure(bmp085ReadUT(), bmp085ReadUP());
-  float CurrentAltitude = calcAltitude(CurrentPressure);
+  float CurrentAltitude = CalculateAltitude(CurrentPressure);
   
   // TODO: Get GPS coordinates
+//  float CurrentLatitude, CurrentLongitude;
+//  char field[20];
+//  GetGPSData();
+//  getField(field, 0);
+//  if(strcmp(field, "$GPRMC") == 0)
+//  {
+//    getField(field, 3);
+//    CurrentLatitude = atof(field);
+//    
+//    getField(field, 5);
+//    CurrentLongitude = atof(field);
+//  }
 
+//  PrintToSerialOutput(CurrentTemp, CurrentPressure, CurrentAltitude, CurrentLatitude, CurrentLongitude);
+//  WriteDataToLogger(CurrentTemp, CurrentPressure, CurrentAltitude, CurrentLatitude, CurrentLongitude);
   PrintToSerialOutput(CurrentTemp, CurrentPressure, CurrentAltitude, 0.0, 0.0);
   WriteDataToLogger(CurrentTemp, CurrentPressure, CurrentAltitude, 0.0, 0.0);
   
@@ -92,6 +114,7 @@ void PrintToSerialOutput(float Temperature, float Pressure, float Altitude, floa
 
 
 void WriteDataToLogger(float Temperature, float Pressure, float Altitude, float Latitude, float Longitude) {
+  DataLogger.listen();
   DataLogger.print(Temperature, 2);
   DataLogger.print(",");
   DataLogger.print(Pressure, 0);
@@ -318,7 +341,7 @@ int readRegister(int deviceAddress, byte address){
   return v;
 }
 
-float calcAltitude(float pressure){
+float CalculateAltitude(float pressure){
 
   float A = pressure/101325;
   float B = 1/5.25588;
@@ -332,9 +355,41 @@ float calcAltitude(float pressure){
 
 
 // *********************************************************************
-// Data logger routines
-void ConfigureDataLogger() 
+// GPS Receiver subroutines
+void GetGPSData() 
 {
-  // set the data rate for the SoftwareSerial port
-  DataLogger.begin(9600);
+  int i = 0;
+  gpsSerial.listen();
+  char ch = gpsSerial.read();
+  while (ch != '\n' && i < sentenceSize)
+  {
+    sentence[i] = ch;
+    i++;
+  }
+
+  sentence[i] = '\0';
 }
+
+
+void getField(char* buffer, int index)
+{
+  int sentencePos = 0;
+  int fieldPos = 0;
+  int commaCount = 0;
+  while (sentencePos < sentenceSize)
+  {
+    if (sentence[sentencePos] == ',')
+    {
+      commaCount ++;
+      sentencePos ++;
+    }
+    if (commaCount == index)
+    {
+      buffer[fieldPos] = sentence[sentencePos];
+      fieldPos ++;
+    }
+    sentencePos ++;
+  }
+  buffer[fieldPos] = '\0';
+} 
+
