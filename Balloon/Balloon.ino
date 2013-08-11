@@ -4,8 +4,11 @@
 
 
 // *********************************************************************
-// General settings
+// General settings and variables
 int SAMPLING_DELAY = 1000;
+
+boolean HasGoodGPSReading;
+boolean HasGoodTempReading;
 
 
 // *********************************************************************
@@ -16,6 +19,8 @@ int TEMP_SENSOR_PIN = 2; //DS18S20 Signal pin on digital 2
 // *********************************************************************
 // Pressure Sensor settings/variables
 float RawTemp, CurrentTemp;
+float CurrentPressure;
+float CurrentAltitude;
 
 #define BMP085_ADDRESS 0x77  // I2C address of BMP085
 const unsigned char OSS = 0;  // Oversampling Setting
@@ -50,7 +55,6 @@ const int sentenceSize = 80;
 char sentence[sentenceSize];
 float CurrentLatitude;
 float CurrentLongitude;
-boolean ShouldRecordGPSData;
 
 
 void setup(void) {
@@ -61,32 +65,32 @@ void setup(void) {
   CurrentTemp = 0.0;
   
   CalibratePressureSensor();
+  CurrentPressure = 0.0;
+  CurrentAltitude = 0.0;
 
   DataLogger.begin(9600);
 
   gpsSerial.begin(9600);
   CurrentLatitude = 0.0;
   CurrentLongitude = 0.0;
-  ShouldRecordGPSData = false;
+
+  HasGoodGPSReading = false;
+  HasGoodTempReading = false;
 }
 
 
 void loop(void) {
   
-  // TODO: Get GPS coordinates
-  static int i = 0;
-  if(!gpsSerial.isListening()) { gpsSerial.listen(); }
-  if (gpsSerial.available())
+  if(!HasGoodGPSReading) 
   {
-    char ch = gpsSerial.read();
-
-    if(ch == '$' && !ShouldRecordGPSData) 
-    { 
-      ShouldRecordGPSData = true; 
-      i = 0;
-    }
-
-    if(ShouldRecordGPSData) {
+    static int i = 0;
+    if(!gpsSerial.isListening()) { gpsSerial.listen(); }
+    if (gpsSerial.available())
+    {
+      char ch = gpsSerial.read();
+  
+      if(ch == '$') { i = 0; }
+  
       if (ch != '\n' && i < sentenceSize)
       {
         sentence[i] = ch;
@@ -95,7 +99,6 @@ void loop(void) {
       else
       {
         sentence[i] = '\0';
-        ShouldRecordGPSData = false;
         i = 0;
     
         char field[20];
@@ -106,30 +109,44 @@ void loop(void) {
           CurrentLatitude = atof(field);
           getField(field, 5);
           CurrentLongitude = atof(field);
+          
+          HasGoodGPSReading = true;
         }
-
-        // Now that we have a good GPS reading, grab the
-        // rest of the data from the other sensors.
-        RawTemp = GetTemp();
-        if(RawTemp > -1000) { CurrentTemp = RawTemp; }
-        float CurrentPressure = GetPressure(bmp085ReadUT(), bmp085ReadUP());
-        float CurrentAltitude = CalculateAltitude(CurrentPressure);
-        
-        PrintToSerialOutput(CurrentTemp, CurrentPressure, CurrentAltitude, CurrentLatitude, CurrentLongitude);
-        WriteDataToLogger(CurrentTemp, CurrentPressure, CurrentAltitude, CurrentLatitude, CurrentLongitude);
-
       }
     }
   }
-  
 
+
+  // Now that we have a good GPS reading, grab the temperature data
+  if(HasGoodGPSReading && !HasGoodTempReading) 
+  {
+    RawTemp = GetTemp();
+    if(RawTemp > -1000) 
+    { 
+      CurrentTemp = RawTemp; 
+      HasGoodTempReading = true;
+    }
+  }
   
-  // TODO: What data do we write to the radio?
-  // TODO: How frequently should we write data to the radio?
-  // TODO: Write data to radio
   
-//  delay(SAMPLING_DELAY);
-  
+  // Now that we have a good GPS and temperature reading, grab
+  // the rest of the data, and log it.
+  if(HasGoodGPSReading && HasGoodTempReading) 
+  {
+    CurrentPressure = GetPressure(bmp085ReadUT(), bmp085ReadUP());
+    CurrentAltitude = CalculateAltitude(CurrentPressure);
+    
+    PrintToSerialOutput(CurrentTemp, CurrentPressure, CurrentAltitude, CurrentLatitude, CurrentLongitude);
+    WriteDataToLogger(CurrentTemp, CurrentPressure, CurrentAltitude, CurrentLatitude, CurrentLongitude);
+
+    // TODO: What data do we write to the radio?
+    // TODO: How frequently should we write data to the radio?
+    // TODO: Write data to radio
+    
+    HasGoodGPSReading = false;
+    HasGoodTempReading = false;
+  }
+
 }
 
 
