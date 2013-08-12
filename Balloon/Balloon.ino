@@ -50,11 +50,12 @@ SoftwareSerial DataLogger(11, 12); // RX, TX
 
 // *********************************************************************
 // GPS receiver settings/variables
-SoftwareSerial gpsSerial(10, 9); // RX, TX (TX not used)
+SoftwareSerial GPSReceiver(10, 9); // RX, TX (TX not used)
 const int sentenceSize = 80;
-char sentence[sentenceSize];
+char GPSRawData[sentenceSize];
 float CurrentLatitude;
 float CurrentLongitude;
+int CurrentTimeStamp;
 
 
 void setup(void) {
@@ -70,9 +71,10 @@ void setup(void) {
 
   DataLogger.begin(9600);
 
-  gpsSerial.begin(9600);
+  GPSReceiver.begin(9600);
   CurrentLatitude = 0.0;
   CurrentLongitude = 0.0;
+  CurrentTimeStamp = 0;
 
   HasGoodGPSReading = false;
   HasGoodTempReading = false;
@@ -84,31 +86,33 @@ void loop(void) {
   if(!HasGoodGPSReading) 
   {
     static int i = 0;
-    if(!gpsSerial.isListening()) { gpsSerial.listen(); }
-    if (gpsSerial.available())
+    if(!GPSReceiver.isListening()) { GPSReceiver.listen(); }
+    if (GPSReceiver.available())
     {
-      char ch = gpsSerial.read();
+      char ch = GPSReceiver.read();
   
       if(ch == '$') { i = 0; }
   
       if (ch != '\n' && i < sentenceSize)
       {
-        sentence[i] = ch;
+        GPSRawData[i] = ch;
         i++;
       }
       else
       {
-        sentence[i] = '\0';
+        GPSRawData[i] = '\0';
         i = 0;
     
-        char field[20];
-        getField(field, 0);
-        if(strcmp(field, "$GPRMC") == 0)
+        char GPSComponent[20];
+        ExtractGPSComponent(GPSComponent, 0);
+        if(strcmp(GPSComponent, "$GPRMC") == 0)
         {
-          getField(field, 3);
-          CurrentLatitude = atof(field);
-          getField(field, 5);
-          CurrentLongitude = atof(field);
+          ExtractGPSComponent(GPSComponent, 1);
+          CurrentTimeStamp = atoi(GPSComponent);
+          ExtractGPSComponent(GPSComponent, 3);
+          CurrentLatitude = atof(GPSComponent);
+          ExtractGPSComponent(GPSComponent, 5);
+          CurrentLongitude = atof(GPSComponent);
           
           HasGoodGPSReading = true;
         }
@@ -136,8 +140,8 @@ void loop(void) {
     CurrentPressure = GetPressure(bmp085ReadUT(), bmp085ReadUP());
     CurrentAltitude = CalculateAltitude(CurrentPressure);
     
-    PrintToSerialOutput(CurrentTemp, CurrentPressure, CurrentAltitude, CurrentLatitude, CurrentLongitude);
-    WriteDataToLogger(CurrentTemp, CurrentPressure, CurrentAltitude, CurrentLatitude, CurrentLongitude);
+    PrintToSerialOutput(CurrentTimeStamp, CurrentTemp, CurrentPressure, CurrentAltitude, CurrentLatitude, CurrentLongitude);
+    WriteDataToLogger(CurrentTimeStamp, CurrentTemp, CurrentPressure, CurrentAltitude, CurrentLatitude, CurrentLongitude);
 
     // TODO: What data do we write to the radio?
     // TODO: How frequently should we write data to the radio?
@@ -152,12 +156,14 @@ void loop(void) {
 
 
 
-void PrintToSerialOutput(float Temperature, float Pressure, float Altitude, float Latitude, float Longitude) {
+void PrintToSerialOutput(int TimeStamp, float Temperature, float Pressure, float Altitude, float Latitude, float Longitude) {
 
   // We print each component of the data line using separate calls instead of using something like sprintf to
   // format a single string.  This is done because the version of sprintf available to us for the Arduino does
   // not support floats.  This was the simplest Plan B we could come up with.
   
+  Serial.print(TimeStamp);
+  Serial.print(",");
   Serial.print(Temperature, 2);
   Serial.print(",");
   Serial.print(Pressure, 0);
@@ -171,9 +177,11 @@ void PrintToSerialOutput(float Temperature, float Pressure, float Altitude, floa
 }
 
 
-void WriteDataToLogger(float Temperature, float Pressure, float Altitude, float Latitude, float Longitude) {
+void WriteDataToLogger(int TimeStamp, float Temperature, float Pressure, float Altitude, float Latitude, float Longitude) {
   if(!DataLogger.isListening()) { DataLogger.listen(); }
 
+  DataLogger.print(TimeStamp);
+  DataLogger.print(",");
   DataLogger.print(Temperature, 2);
   DataLogger.print(",");
   DataLogger.print(Pressure, 0);
@@ -415,21 +423,21 @@ float CalculateAltitude(float pressure){
 
 // *********************************************************************
 // GPS Receiver subroutines
-void getField(char* buffer, int index)
+void ExtractGPSComponent(char* buffer, int index)
 {
   int sentencePos = 0;
   int fieldPos = 0;
   int commaCount = 0;
   while (sentencePos < sentenceSize)
   {
-    if (sentence[sentencePos] == ',')
+    if (GPSRawData[sentencePos] == ',')
     {
       commaCount ++;
       sentencePos ++;
     }
     if (commaCount == index)
     {
-      buffer[fieldPos] = sentence[sentencePos];
+      buffer[fieldPos] = GPSRawData[sentencePos];
       fieldPos ++;
     }
     sentencePos ++;
