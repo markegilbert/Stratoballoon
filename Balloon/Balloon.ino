@@ -55,7 +55,7 @@ const int sentenceSize = 80;
 char GPSRawData[sentenceSize];
 float CurrentLatitude;
 float CurrentLongitude;
-int CurrentTimeStamp;
+float CurrentTimeStamp;
 
 
 void setup(void) {
@@ -74,7 +74,7 @@ void setup(void) {
   GPSReceiver.begin(9600);
   CurrentLatitude = 0.0;
   CurrentLongitude = 0.0;
-  CurrentTimeStamp = 0;
+  CurrentTimeStamp = 0.0;
 
   HasGoodGPSReading = false;
   HasGoodTempReading = false;
@@ -108,7 +108,7 @@ void loop(void) {
         if(strcmp(GPSComponent, "$GPRMC") == 0)
         {
           ExtractGPSComponent(GPSComponent, 1);
-          CurrentTimeStamp = atoi(GPSComponent);
+          CurrentTimeStamp = atof(GPSComponent);
           ExtractGPSComponent(GPSComponent, 3);
           CurrentLatitude = atof(GPSComponent);
           ExtractGPSComponent(GPSComponent, 5);
@@ -156,13 +156,13 @@ void loop(void) {
 
 
 
-void PrintToSerialOutput(int TimeStamp, float Temperature, float Pressure, float Altitude, float Latitude, float Longitude) {
+void PrintToSerialOutput(float TimeStamp, float Temperature, float Pressure, float Altitude, float Latitude, float Longitude) {
 
   // We print each component of the data line using separate calls instead of using something like sprintf to
   // format a single string.  This is done because the version of sprintf available to us for the Arduino does
   // not support floats.  This was the simplest Plan B we could come up with.
   
-  Serial.print(TimeStamp);
+  Serial.print(TimeStamp, 0);
   Serial.print(",");
   Serial.print(Temperature, 2);
   Serial.print(",");
@@ -177,10 +177,10 @@ void PrintToSerialOutput(int TimeStamp, float Temperature, float Pressure, float
 }
 
 
-void WriteDataToLogger(int TimeStamp, float Temperature, float Pressure, float Altitude, float Latitude, float Longitude) {
+void WriteDataToLogger(float TimeStamp, float Temperature, float Pressure, float Altitude, float Latitude, float Longitude) {
   if(!DataLogger.isListening()) { DataLogger.listen(); }
 
-  DataLogger.print(TimeStamp);
+  DataLogger.print(TimeStamp, 0);
   DataLogger.print(",");
   DataLogger.print(Temperature, 2);
   DataLogger.print(",");
