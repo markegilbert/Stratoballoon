@@ -1,6 +1,8 @@
 #include <OneWire.h> 
 #include <Wire.h>
 #include <SoftwareSerial.h>
+#include <string.h>
+#include <util/crc16.h>
 
 
 // *********************************************************************
@@ -58,6 +60,19 @@ float CurrentLongitude;
 float CurrentTimeStamp;
 
 
+// *********************************************************************
+// NTX2 Transmitter settings
+#define RADIO_PIN 4
+#define CALL_SIGN "KD8VZA"
+#define TRANSMIT_EVERY_Nth_READING 10
+char TimeStampBuffer[20], AltitudeBuffer[20], LatitudeBuffer[20], LongitudeBuffer[20];
+char TransmitBuffer[100];
+char TransmitBufferChecksum[6];
+int TransmitNumber;
+
+
+// *********************************************************************
+// Sketch initialization
 void setup(void) {
   Serial.begin(9600);
   
@@ -78,9 +93,14 @@ void setup(void) {
 
   HasGoodGPSReading = false;
   HasGoodTempReading = false;
+  
+  pinMode(RADIO_PIN,OUTPUT);
+  TransmitNumber = 0;
 }
 
 
+// *********************************************************************
+// Main loop
 void loop(void) {
   
   if(!HasGoodGPSReading) 
@@ -143,9 +163,12 @@ void loop(void) {
     PrintToSerialOutput(CurrentTimeStamp, CurrentTemp, CurrentPressure, CurrentAltitude, CurrentLatitude, CurrentLongitude);
     WriteDataToLogger(CurrentTimeStamp, CurrentTemp, CurrentPressure, CurrentAltitude, CurrentLatitude, CurrentLongitude);
 
-    // TODO: What data do we write to the radio?
-    // TODO: How frequently should we write data to the radio?
-    // TODO: Write data to radio
+    if(TransmitNumber > TRANSMIT_EVERY_Nth_READING) {
+      TransmitDataToGround(CurrentTimeStamp, CurrentAltitude, CurrentLatitude, CurrentLongitude);
+      TransmitNumber = 0;
+    } else {
+      TransmitNumber++;
+    }
     
     HasGoodGPSReading = false;
     HasGoodTempReading = false;
@@ -193,6 +216,60 @@ void WriteDataToLogger(float TimeStamp, float Temperature, float Pressure, float
   DataLogger.print(Longitude, 4);
   DataLogger.println();
 }
+
+
+void TransmitDataToGround(float TimeStamp, float Altitude, float Latitude, float Longitude) {
+  dtostrf(TimeStamp, 20, 3, TimeStampBuffer);
+  dtostrf(Altitude, 20, 3, AltitudeBuffer);
+  dtostrf(Latitude, 20, 5, LatitudeBuffer);
+  dtostrf(Longitude, 20, 5, LongitudeBuffer);
+
+  int TransmitIndex = 0;
+  TransmitIndex = TransferBuffer(CALL_SIGN, sizeof(CALL_SIGN), TransmitBuffer, TransmitIndex, true);
+  TransmitIndex = TransferBuffer(TimeStampBuffer, sizeof(TimeStampBuffer), TransmitBuffer, TransmitIndex, true);
+  TransmitIndex = TransferBuffer(AltitudeBuffer, sizeof(AltitudeBuffer), TransmitBuffer, TransmitIndex, true);
+  TransmitIndex = TransferBuffer(LatitudeBuffer, sizeof(LatitudeBuffer), TransmitBuffer, TransmitIndex, true);
+  TransmitIndex = TransferBuffer(LongitudeBuffer, sizeof(LongitudeBuffer), TransmitBuffer, TransmitIndex, true);
+
+
+  unsigned int CHECKSUM = gps_CRC16_checksum(TransmitBuffer);  // Calculates the checksum for this datastring
+  sprintf(TransmitBufferChecksum, "*%04X\n", CHECKSUM);
+  TransmitIndex = TransferBuffer(TransmitBufferChecksum, sizeof(TransmitBufferChecksum), TransmitBuffer, TransmitIndex, false);
+ 
+  // TODO: Write data to radio
+  //Serial.println(TransmitBuffer);
+  rtty_txstring (TransmitBuffer);
+}
+
+
+
+
+// *********************************************************************
+// General subroutines
+
+
+// This copies the SourceBuffer into DestBuffer starting at DestIndex, 
+// but trims out any leading spaces in SourceBuffer
+int TransferBuffer(char* SourceBuffer, int SourceBufferSize, char* DestBuffer, int DestIndex, boolean ShouldAddComma) {
+  int BufferIndex = 0;
+  
+  // Skip all characters from 0-32, but don't count carriage returns, chr(13)
+  while (BufferIndex < SourceBufferSize-1 
+          && SourceBuffer[BufferIndex] <= 32 && SourceBuffer[BufferIndex] != 13) { BufferIndex++; }
+  while (BufferIndex < SourceBufferSize-1) {     
+    DestBuffer[DestIndex] = SourceBuffer[BufferIndex];
+    DestIndex++;
+    BufferIndex++;
+  }  
+  
+  if(ShouldAddComma) {
+    TransmitBuffer[DestIndex] = ',';
+    DestIndex++;
+  }
+
+  return DestIndex;
+}
+
 
 
 // *********************************************************************
@@ -445,3 +522,97 @@ void ExtractGPSComponent(char* buffer, int index)
   buffer[fieldPos] = '\0';
 } 
 
+
+
+// *********************************************************************
+// NTX2 subroutines
+void rtty_txstring (char * string)
+{
+ 
+  /* Simple function to sent a char at a time to 
+   	** rtty_txbyte function. 
+   	** NB Each char is one byte (8 Bits)
+   	*/
+ 
+  char c;
+ 
+  c = *string++;
+ 
+  while ( c != '\0')
+  {
+    rtty_txbyte (c);
+    c = *string++;
+  }
+}
+ 
+ 
+void rtty_txbyte (char c)
+{
+  /* Simple function to sent each bit of a char to 
+   	** rtty_txbit function. 
+   	** NB The bits are sent Least Significant Bit first
+   	**
+   	** All chars should be preceded with a 0 and 
+   	** proceded with a 1. 0 = Start bit; 1 = Stop bit
+   	**
+   	*/
+ 
+  int i;
+ 
+  rtty_txbit (0); // Start bit
+ 
+  // Send bits for for char LSB first	
+ 
+  for (i=0;i<7;i++) // Change this here 7 or 8 for ASCII-7 / ASCII-8
+  {
+    if (c & 1) rtty_txbit(1); 
+ 
+    else rtty_txbit(0);	
+ 
+    c = c >> 1;
+ 
+  }
+ 
+  rtty_txbit (1); // Stop bit
+  rtty_txbit (1); // Stop bit
+}
+ 
+void rtty_txbit (int bit)
+{
+  if (bit)
+  {
+    // high
+    digitalWrite(RADIO_PIN, HIGH);
+  }
+  else
+  {
+    // low
+    digitalWrite(RADIO_PIN, LOW);
+ 
+  }
+ 
+  //                  delayMicroseconds(3370); // 300 baud
+  delayMicroseconds(10000); // For 50 Baud uncomment this and the line below. 
+  delayMicroseconds(10150); // You can't do 20150 it just doesn't work as the
+                            // largest value that will produce an accurate delay is 16383
+                            // See : http://arduino.cc/en/Reference/DelayMicroseconds
+ 
+}
+ 
+uint16_t gps_CRC16_checksum (char *string)
+{
+  size_t i;
+  uint16_t crc;
+  uint8_t c;
+ 
+  crc = 0xFFFF;
+ 
+  // Calculate checksum ignoring the first two $s
+  for (i = 2; i < strlen(string); i++)
+  {
+    c = string[i];
+    crc = _crc_xmodem_update (crc, c);
+  }
+ 
+  return crc;
+}    
