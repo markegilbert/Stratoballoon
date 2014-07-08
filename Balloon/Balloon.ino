@@ -63,7 +63,8 @@ float CurrentTimeStamp;
 // *********************************************************************
 // NTX2 Transmitter settings
 #define RADIO_PIN 4
-#define CALL_SIGN "KD8VZA"
+#define RADIO_ENABLE_PIN 5
+#define CALL_SIGN "KD8VZA-KD8VZA-KD8VZA"
 #define TRANSMIT_EVERY_Nth_READING 10
 char TimeStampBuffer[20], AltitudeBuffer[20], LatitudeBuffer[20], LongitudeBuffer[20];
 char TransmitBuffer[100];
@@ -95,6 +96,7 @@ void setup(void) {
   HasGoodTempReading = false;
   
   pinMode(RADIO_PIN,OUTPUT);
+  pinMode(RADIO_ENABLE_PIN,INPUT);
   TransmitNumber = 0;
 }
 
@@ -219,6 +221,10 @@ void WriteDataToLogger(float TimeStamp, float Temperature, float Pressure, float
 
 
 void TransmitDataToGround(float TimeStamp, float Altitude, float Latitude, float Longitude) {
+  
+  // Build the string to transmit
+  digitalWrite(RADIO_ENABLE_PIN, HIGH);
+  delay(3000);
   dtostrf(TimeStamp, 20, 3, TimeStampBuffer);
   dtostrf(Altitude, 20, 3, AltitudeBuffer);
   dtostrf(Latitude, 20, 5, LatitudeBuffer);
@@ -231,14 +237,12 @@ void TransmitDataToGround(float TimeStamp, float Altitude, float Latitude, float
   TransmitIndex = TransferBuffer(LatitudeBuffer, sizeof(LatitudeBuffer), TransmitBuffer, TransmitIndex, true);
   TransmitIndex = TransferBuffer(LongitudeBuffer, sizeof(LongitudeBuffer), TransmitBuffer, TransmitIndex, true);
 
-
   unsigned int CHECKSUM = gps_CRC16_checksum(TransmitBuffer);  // Calculates the checksum for this datastring
   sprintf(TransmitBufferChecksum, "*%04X\n", CHECKSUM);
   TransmitIndex = TransferBuffer(TransmitBufferChecksum, sizeof(TransmitBufferChecksum), TransmitBuffer, TransmitIndex, false);
  
-  // TODO: Write data to radio
-  //Serial.println(TransmitBuffer);
   rtty_txstring (TransmitBuffer);
+  digitalWrite(RADIO_ENABLE_PIN, LOW);
 }
 
 
